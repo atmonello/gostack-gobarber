@@ -6,6 +6,8 @@ import User from '../models/User';
 import File from '../models/File';
 import Notification from '../schemas/Notification';
 
+import Mail from '../../lib/mail';
+
 class AppointmentController {
   async store(req, res) {
     const schema = Yup.object().shape({
@@ -126,7 +128,21 @@ class AppointmentController {
   async delete(req, res) {
     const { id: appointment_id } = req.params;
 
-    const appointment = await Appointment.findByPk(appointment_id);
+    const appointment = await Appointment.findByPk(appointment_id, {
+      include: [
+        {
+          model: User,
+          as: 'provider',
+          attributes: ['name', 'email'],
+        },
+      ],
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        error: 'Appointment not found',
+      });
+    }
 
     if (appointment.user_id !== req.userID) {
       return res.status(401).json({
@@ -144,7 +160,13 @@ class AppointmentController {
 
     appointment.cancelled_at = new Date();
 
-    await appointment.save(appointment);
+    await appointment.save();
+
+    await Mail.sendMail({
+      to: `${appointment.provider.name} <${appointment.provider.email}>`,
+      subject: 'Agendamento cancelado',
+      text: 'Você tem um novo cancelamento.',
+    });
 
     return res.json(appointment);
   }
